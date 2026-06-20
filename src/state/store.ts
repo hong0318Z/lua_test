@@ -4,16 +4,18 @@ const LS_SOURCE = 'lua_test.source'
 const LS_MARKER = 'lua_test.marker'
 const LS_SETTINGS = 'lua_test.settings'
 
-export const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'] as const
+// 2026-04-24 DeepSeek V4 출시로 deepseek-chat/deepseek-reasoner는
+// 2026-07-24 15:59 UTC 이후 완전히 폐기된다. v4-pro/v4-flash로 전환.
+// (출처: https://api-docs.deepseek.com/news/news260424)
+export const DEEPSEEK_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash'] as const
 export type DeepseekModel = (typeof DEEPSEEK_MODELS)[number]
 
-// deepseek-chat / deepseek-reasoner 둘 다 컨텍스트 윈도우 64K, 최대 출력
-// 토큰은 베타 헤더(output 8k/64k)를 켰을 때 기준 상한. "최대 컨텍스트,
-// 최대 출력"을 기본값으로 깔아둔다.
-export const MAX_CONTEXT_TOKENS = 65536
+// v4-pro/v4-flash 둘 다 컨텍스트 윈도우 1M, 최대 출력 384K 토큰.
+// "최대 컨텍스트, 최대 출력"을 기본값으로 깔아둔다.
+export const MAX_CONTEXT_TOKENS = 1_000_000
 export const MAX_OUTPUT_TOKENS: Record<DeepseekModel, number> = {
-  'deepseek-chat': 8192,
-  'deepseek-reasoner': 65536,
+  'deepseek-v4-pro': 384_000,
+  'deepseek-v4-flash': 384_000,
 }
 
 export interface Settings {
@@ -66,10 +68,16 @@ function loadMarker(): string {
 
 function loadSettings(): Settings {
   const raw = localStorage.getItem(LS_SETTINGS)
-  const defaults: Settings = { apiKey: '', model: 'deepseek-chat', maxOutputTokens: MAX_OUTPUT_TOKENS['deepseek-chat'] }
+  const defaults: Settings = { apiKey: '', model: 'deepseek-v4-pro', maxOutputTokens: MAX_OUTPUT_TOKENS['deepseek-v4-pro'] }
   if (!raw) return defaults
   try {
-    return { ...defaults, ...JSON.parse(raw) }
+    const parsed = { ...defaults, ...JSON.parse(raw) }
+    // 폐기된 모델 이름(deepseek-chat/deepseek-reasoner)이 저장돼 있던 경우 v4로 이전
+    if (!DEEPSEEK_MODELS.includes(parsed.model)) {
+      parsed.model = 'deepseek-v4-pro'
+      parsed.maxOutputTokens = MAX_OUTPUT_TOKENS['deepseek-v4-pro']
+    }
+    return parsed
   } catch {
     return defaults
   }
