@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '../state/store'
-import { runFullDiagnostics, type DiagnosticEntry } from '../lua/diagnostics'
+import { checkSyntax, runFullDiagnostics, type DiagnosticEntry } from '../lua/diagnostics'
 import {
   applyRegionEdits,
   buildHistoryContext,
@@ -47,6 +47,8 @@ export function RegionEditFlow() {
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [postCheck, setPostCheck] = useState<DiagnosticEntry[] | null>(null)
   const [postCheckRunning, setPostCheckRunning] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  const [applyChecking, setApplyChecking] = useState(false)
 
   function requireApiKey(): boolean {
     if (!settings.apiKey) {
@@ -122,6 +124,7 @@ export function RegionEditFlow() {
     )
 
     setSelected(new Set(results.map((_, i) => i).filter((i) => results[i].newText !== null)))
+    setApplyError(null)
     setPhase({ kind: 'review', snapshot, request, drafts: results })
   }
 
@@ -132,6 +135,23 @@ export function RegionEditFlow() {
       .map(({ d }) => ({ region: d.region, newText: d.newText! }))
     if (edits.length === 0) return
     const next = applyRegionEdits(snapshot, edits)
+
+    setApplyError(null)
+    setApplyChecking(true)
+    let syntaxResult: { ok: boolean; error?: string }
+    try {
+      syntaxResult = await checkSyntax(next)
+    } finally {
+      setApplyChecking(false)
+    }
+    if (!syntaxResult.ok) {
+      setApplyError(
+        `선택한 영역을 적용하면 문법 오류가 발생합니다 (적용 취소됨):\n${syntaxResult.error}\n` +
+          `영역이 Lua 블록(function/if/for/do...end) 경계와 맞지 않을 수 있습니다. 영역을 다시 선택하거나 다시 요청해보세요.`,
+      )
+      return
+    }
+
     setLastAppliedSnapshot(snapshot)
     setSource(next)
     setPhase({ kind: 'idle' })
@@ -210,6 +230,7 @@ export function RegionEditFlow() {
   }
 
   function cancel() {
+    setApplyError(null)
     setPhase({ kind: 'idle' })
   }
 
@@ -319,9 +340,13 @@ export function RegionEditFlow() {
               )}
             </div>
           ))}
+          {applyError && <pre className="ai-error">{applyError}</pre>}
           <div className="region-actions">
-            <button onClick={() => applySelected(phase.snapshot, phase.request, phase.drafts)} disabled={selected.size === 0}>
-              선택한 영역 적용
+            <button
+              onClick={() => applySelected(phase.snapshot, phase.request, phase.drafts)}
+              disabled={selected.size === 0 || applyChecking}
+            >
+              {applyChecking ? '문법 검증 중...' : '선택한 영역 적용'}
             </button>
             <button className="region-actions-secondary" onClick={cancel}>
               취소

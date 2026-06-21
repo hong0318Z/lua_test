@@ -6,6 +6,12 @@ export interface DiagnosticEntry {
   error?: string
 }
 
+// 문법 검사만 빠르게 수행한다 (영역 편집 결과를 적용 전에 미리 검증할 때 사용).
+export async function checkSyntax(source: string): Promise<{ ok: boolean; error?: string }> {
+  const diag = new LuaRuntime()
+  return diag.loadScript(source)
+}
+
 // 컴파일 + onStart + onInput + onOutput + editDisplay를 한 번에 돌려서 모든
 // 단계의 결과를 모아 반환한다. 현재 테스트 중인 세션(runtime)의 state를 건드리지
 // 않도록 매번 새 임시 엔진을 띄워서 검사한다.
