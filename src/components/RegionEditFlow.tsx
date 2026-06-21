@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAppStore } from '../state/store'
 import { checkSyntax, runFullDiagnostics, type DiagnosticEntry } from '../lua/diagnostics'
 import {
+  analysisSystemPrompt,
   applyRegionEdits,
   buildHistoryContext,
   buildRegionContext,
@@ -25,6 +26,7 @@ interface RegionDraft {
 
 type Phase =
   | { kind: 'idle' }
+  | { kind: 'discussing'; request: string; messages: ChatMessage[] }
   | { kind: 'planning' }
   | { kind: 'awaiting-approval'; regions: EditRegion[]; snapshot: string; request: string }
   | { kind: 'editing'; regions: EditRegion[]; snapshot: string; request: string; drafts: RegionDraft[] }
@@ -49,6 +51,7 @@ export function RegionEditFlow() {
   const [postCheckRunning, setPostCheckRunning] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applyChecking, setApplyChecking] = useState(false)
+  const [discussLoading, setDiscussLoading] = useState(false)
 
   function requireApiKey(): boolean {
     if (!settings.apiKey) {
@@ -59,10 +62,7 @@ export function RegionEditFlow() {
     return true
   }
 
-  async function startPlanning(explicitRequest?: string) {
-    const request = (explicitRequest ?? input).trim()
-    if (!request || !requireApiKey()) return
-    setInput('')
+  async function runPlanning(request: string, extraContext: string) {
     setPhase({ kind: 'planning' })
     try {
       const historyText = buildHistoryContext(history)
@@ -70,7 +70,7 @@ export function RegionEditFlow() {
         { role: 'system', content: planSystemPrompt() },
         {
           role: 'user',
-          content: `${historyText}요청: ${request}\n\n줄 번호가 매겨진 전체 소스:\n${numberLines(source)}`,
+          content: `${historyText}요청: ${request}\n${extraContext}\n줄 번호가 매겨진 전체 소스:\n${numberLines(source)}`,
         },
       ]
       const reply = await callDeepseek({
@@ -88,6 +88,56 @@ export function RegionEditFlow() {
     } catch (e) {
       setPhase({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
     }
+  }
+
+  // 바로 영역 식별로 들어가지 않고, 먼저 AI가 요청을 어떻게 이해했는지 자연어로 설명하고
+  // 사용자가 대화로 확인/보정한 뒤 "계획대로 진행"을 눌러야 실제 영역 식별이 시작된다.
+  function startPlanning(explicitRequest?: string) {
+    const request = (explicitRequest ?? input).trim()
+    if (!request || !requireApiKey()) return
+    setInput('')
+    askAnalysis(request, [
+      {
+        role: 'user',
+        content: `요청: ${request}\n\n줄 번호가 매겨진 전체 소스:\n${numberLines(source)}`,
+      },
+    ])
+  }
+
+  async function askAnalysis(request: string, messages: ChatMessage[]) {
+    setPhase({ kind: 'discussing', request, messages })
+    setDiscussLoading(true)
+    try {
+      const reply = await callDeepseek({
+        apiKey: settings.apiKey,
+        model: settings.model,
+        maxOutputTokens: settings.maxOutputTokens,
+        messages: [{ role: 'system', content: analysisSystemPrompt() }, ...messages],
+      })
+      setPhase((prev) =>
+        prev.kind === 'discussing' ? { ...prev, messages: [...prev.messages, { role: 'assistant', content: reply }] } : prev,
+      )
+    } catch (e) {
+      setPhase({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setDiscussLoading(false)
+    }
+  }
+
+  function continueDiscussion(text: string) {
+    if (phase.kind !== 'discussing') return
+    const trimmed = text.trim()
+    if (!trimmed) return
+    setInput('')
+    askAnalysis(phase.request, [...phase.messages, { role: 'user', content: trimmed }])
+  }
+
+  function confirmAndPlan() {
+    if (phase.kind !== 'discussing') return
+    const discussionText = phase.messages
+      .map((m, i) => `${m.role === 'user' ? '사용자' : 'AI'}: ${i === 0 && m.role === 'user' ? phase.request : m.content}`)
+      .join('\n\n')
+    runPlanning(phase.request, `\n대화를 통해 확인/보정된 내용:\n${discussionText}\n\n`)
   }
 
   async function approveAndEdit(regions: EditRegion[], snapshot: string, request: string) {
@@ -236,6 +286,11 @@ export function RegionEditFlow() {
 
   const postCheckFailing = postCheck?.filter((d) => !d.ok) ?? []
 
+  function handleSend() {
+    if (phase.kind === 'discussing') continueDiscussion(input)
+    else startPlanning()
+  }
+
   return (
     <div className="region-edit-flow">
       {lastAppliedSnapshot !== null && phase.kind === 'idle' && (
@@ -281,11 +336,32 @@ export function RegionEditFlow() {
         <>
           {phase.kind === 'error' && <div className="ai-error">{phase.message}</div>}
           <p className="ai-empty-hint">
-            자연어로 요청하면 ① 수정이 필요한 영역만 먼저 식별하고 ② 승인하면 영역별로 호출해
-            수정한 뒤 ③ 검토 후 적용합니다. 적용 후에는 자동으로 재점검하고 변경 요약을
+            자연어로 요청하면 ① AI가 요청을 어떻게 이해했는지 먼저 대화로 확인하고 ② 계획을
+            확정하면 수정이 필요한 영역만 식별해 몇 군데인지 보여준 뒤 ③ 승인하면 영역별로
+            호출해 수정하고 ④ 검토 후 적용합니다. 적용 후에는 자동으로 재점검하고 변경 요약을
             보여주며, 이전 작업 내역은 다음 요청에서 참고용으로 기억됩니다.
           </p>
         </>
+      )}
+
+      {phase.kind === 'discussing' && (
+        <div className="region-discussion">
+          {phase.messages.map((m, i) => (
+            <div key={i} className={m.role === 'user' ? 'region-chat-msg user' : 'region-chat-msg assistant'}>
+              <div className="region-chat-role">{m.role === 'user' ? '나' : 'AI'}</div>
+              <div className="region-chat-text">{i === 0 && m.role === 'user' ? phase.request : m.content}</div>
+            </div>
+          ))}
+          {discussLoading && <div className="ai-loading">AI가 이해한 내용을 정리하는 중...</div>}
+          <div className="region-actions">
+            <button onClick={confirmAndPlan} disabled={discussLoading || phase.messages.length === 0}>
+              계획대로 진행 (영역 식별 시작)
+            </button>
+            <button className="region-actions-secondary" onClick={cancel}>
+              취소
+            </button>
+          </div>
+        </div>
       )}
 
       {phase.kind === 'planning' && <div className="ai-loading">수정할 영역을 식별하는 중...</div>}
@@ -374,12 +450,16 @@ export function RegionEditFlow() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startPlanning()
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend()
           }}
-          placeholder='수정 요청 입력 (Ctrl+Enter로 전송), 예: "선물 카운터가 1씩 오르게 해줘"'
-          disabled={phase.kind === 'planning' || phase.kind === 'editing'}
+          placeholder={
+            phase.kind === 'discussing'
+              ? '이해가 맞는지 보정하거나 추가 설명을 입력하세요 (Ctrl+Enter로 전송)'
+              : '수정 요청 입력 (Ctrl+Enter로 전송), 예: "선물 카운터가 1씩 오르게 해줘"'
+          }
+          disabled={phase.kind === 'planning' || phase.kind === 'editing' || discussLoading}
         />
-        <button onClick={() => startPlanning()} disabled={phase.kind === 'planning' || phase.kind === 'editing'}>
+        <button onClick={handleSend} disabled={phase.kind === 'planning' || phase.kind === 'editing' || discussLoading}>
           전송
         </button>
       </div>

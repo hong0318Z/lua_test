@@ -557,6 +557,33 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.region-discussion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.region-chat-msg {
+  border-radius: 6px;
+  padding: 6px 8px;
+  border: 1px solid #2a2b33;
+}
+.region-chat-msg.user {
+  background: #1a2230;
+}
+.region-chat-msg.assistant {
+  background: #181920;
+}
+.region-chat-role {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 2px;
+}
+.region-chat-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #ddd;
+}
+
 .region-summary-box, .region-postcheck-box {
   background: #181920;
   border: 1px solid #2a2b33;
