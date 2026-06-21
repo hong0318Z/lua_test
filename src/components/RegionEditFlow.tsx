@@ -285,6 +285,9 @@ export function RegionEditFlow() {
   }
 
   const postCheckFailing = postCheck?.filter((d) => !d.ok) ?? []
+  // 영역 식별/적용처럼 화면을 통째로 차지하는 단계가 아니면, 직전 결과(되돌리기/요약/재점검/내역)를
+  // 계속 보여준다 — 대화(분석) 단계로 넘어갔다고 해서 이전 정보가 사라지면 안 된다.
+  const showSideInfo = phase.kind === 'idle' || phase.kind === 'discussing' || phase.kind === 'planning' || phase.kind === 'error'
 
   function handleSend() {
     if (phase.kind === 'discussing') continueDiscussion(input)
@@ -293,21 +296,22 @@ export function RegionEditFlow() {
 
   return (
     <div className="region-edit-flow">
-      {lastAppliedSnapshot !== null && phase.kind === 'idle' && (
+      <div className="region-scroll">
+      {lastAppliedSnapshot !== null && showSideInfo && (
         <div className="region-revert-bar">
           <span>방금 영역 수정이 적용되었습니다.</span>
           <button onClick={revert}>적용 전 코드로 되돌리기</button>
         </div>
       )}
 
-      {(changeSummary || summaryLoading) && phase.kind === 'idle' && (
+      {(changeSummary || summaryLoading) && showSideInfo && (
         <div className="region-summary-box">
           <div className="region-summary-header">변경 요약 (AI)</div>
           {summaryLoading ? <div className="ai-loading">요약 생성 중...</div> : <div className="region-summary-text">{changeSummary}</div>}
         </div>
       )}
 
-      {(postCheck || postCheckRunning) && phase.kind === 'idle' && (
+      {(postCheck || postCheckRunning) && showSideInfo && (
         <div className="region-postcheck-box">
           <div className="region-summary-header">적용 후 재점검</div>
           {postCheckRunning ? (
@@ -431,7 +435,7 @@ export function RegionEditFlow() {
         </div>
       )}
 
-      {history.length > 0 && phase.kind === 'idle' && (
+      {history.length > 0 && showSideInfo && (
         <details className="region-history">
           <summary>이전 작업 내역 ({history.length}건, 다음 요청에 참고됨)</summary>
           <ol>
@@ -444,6 +448,7 @@ export function RegionEditFlow() {
           </ol>
         </details>
       )}
+      </div>
 
       <div className="ai-input-row">
         <textarea

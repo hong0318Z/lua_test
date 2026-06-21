@@ -484,6 +484,14 @@
   min-height: 0;
   gap: 8px;
 }
+.region-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .region-revert-bar {
   display: flex;
   align-items: center;
@@ -505,9 +513,6 @@
   white-space: nowrap;
 }
 .region-approval, .region-review {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   font-size: 12px;
   display: flex;
   flex-direction: column;
