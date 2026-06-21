@@ -92,6 +92,12 @@ export interface SelectedElement {
   textSample: string
 }
 
+export interface DiagnosticEntry {
+  stage: string
+  ok: boolean
+  error?: string
+}
+
 interface AppState {
   source: string
   marker: string
@@ -104,6 +110,8 @@ interface AppState {
   activeAiTab: 'edit' | 'explain'
   settingsOpen: boolean
   activeAppView: 'workbench' | 'tools'
+  diagnostics: DiagnosticEntry[] | null
+  diagnosticsRunning: boolean
 
   setSource: (s: string) => void
   setMarker: (m: string) => void
@@ -116,6 +124,8 @@ interface AppState {
   setActiveAiTab: (t: 'edit' | 'explain') => void
   setSettingsOpen: (v: boolean) => void
   setActiveAppView: (v: 'workbench' | 'tools') => void
+  setDiagnostics: (d: DiagnosticEntry[] | null) => void
+  setDiagnosticsRunning: (v: boolean) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -130,6 +140,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeAiTab: 'edit',
   settingsOpen: false,
   activeAppView: 'workbench',
+  diagnostics: null,
+  diagnosticsRunning: false,
 
   setSource: (s) => {
     localStorage.setItem(LS_SOURCE, s)
@@ -152,4 +164,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveAiTab: (t) => set({ activeAiTab: t }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
   setActiveAppView: (v) => set({ activeAppView: v }),
+  setDiagnostics: (d) => set({ diagnostics: d }),
+  setDiagnosticsRunning: (v) => set({ diagnosticsRunning: v }),
 }))

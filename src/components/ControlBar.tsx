@@ -6,12 +6,14 @@ interface Props {
   onUserMessage: (text: string) => void
   onCharMessage: (text: string) => void
   onRefreshPanel: () => void
+  onFullCheck: () => void
   busy: boolean
 }
 
-export function ControlBar({ onNewChat, onUserMessage, onCharMessage, onRefreshPanel, busy }: Props) {
+export function ControlBar({ onNewChat, onUserMessage, onCharMessage, onRefreshPanel, onFullCheck, busy }: Props) {
   const marker = useAppStore((s) => s.marker)
   const setMarker = useAppStore((s) => s.setMarker)
+  const diagnosticsRunning = useAppStore((s) => s.diagnosticsRunning)
   const [userText, setUserText] = useState('')
   const [charText, setCharText] = useState('')
 
@@ -23,6 +25,9 @@ export function ControlBar({ onNewChat, onUserMessage, onCharMessage, onRefreshP
         </button>
         <button onClick={onRefreshPanel} disabled={busy}>
           패널 새로고침 (editDisplay)
+        </button>
+        <button onClick={onFullCheck} disabled={busy || diagnosticsRunning} title="컴파일/onStart/onInput/onOutput/editDisplay를 한 번에 검사">
+          {diagnosticsRunning ? '전체 점검 중...' : '전체 점검'}
         </button>
         <label className="marker-field">
           <span>패널 마커</span>
