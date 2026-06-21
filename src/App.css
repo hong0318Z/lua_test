@@ -25,6 +25,29 @@
   margin: 0;
   font-weight: 600;
 }
+.app-view-tabs {
+  display: flex;
+  gap: 6px;
+}
+.app-view-tab {
+  background: #1c1d24;
+  color: #999;
+  border: 1px solid #2a2b33;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.app-view-tab.active {
+  background: #232530;
+  color: #fff;
+  border-color: #4da3ff;
+}
+
+.pane-tools-full {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  overflow-y: auto;
+}
 
 .pane {
   background: #14151a;
@@ -310,6 +333,111 @@
   border: 1px solid #4da3ff;
   border-radius: 6px;
   padding: 0 16px;
+}
+
+/* ===== Tools panel ===== */
+.tools-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.tools-section {
+  background: #181920;
+  border: 1px solid #2a2b33;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.tools-section h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.tools-hint {
+  color: #999;
+  font-size: 12px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.tools-row {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.tools-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #ccc;
+}
+.tools-row-grow { flex: 1; min-width: 280px; }
+.tools-row input, .tools-row select {
+  background: #0e0f13;
+  color: #e6e6e6;
+  border: 1px solid #343648;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.tools-row button {
+  background: #2c5aa3;
+  color: #fff;
+  border: 1px solid #4da3ff;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 12px;
+  height: 32px;
+}
+.tools-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.tools-col { display: flex; flex-direction: column; gap: 4px; }
+.tools-col-label {
+  font-size: 11px;
+  color: #777;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tools-textarea {
+  width: 100%;
+  min-height: 220px;
+  background: #0e0f13;
+  color: #e6e6e6;
+  border: 1px solid #343648;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+.tools-textarea-sm { min-height: 70px; }
+.tools-copy-btn {
+  background: #232530;
+  color: #e6e6e6;
+  border: 1px solid #343648;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.tools-result {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #2a2b33;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tools-result-type {
+  font-size: 12px;
+  color: #4da3ff;
+  margin-bottom: 4px;
 }
 
 /* ===== Settings modal ===== */

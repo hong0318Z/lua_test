@@ -103,6 +103,7 @@ interface AppState {
   selected: SelectedElement | null
   activeAiTab: 'edit' | 'explain'
   settingsOpen: boolean
+  activeAppView: 'workbench' | 'tools'
 
   setSource: (s: string) => void
   setMarker: (m: string) => void
@@ -114,6 +115,7 @@ interface AppState {
   setSelected: (s: SelectedElement | null) => void
   setActiveAiTab: (t: 'edit' | 'explain') => void
   setSettingsOpen: (v: boolean) => void
+  setActiveAppView: (v: 'workbench' | 'tools') => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -127,6 +129,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selected: null,
   activeAiTab: 'edit',
   settingsOpen: false,
+  activeAppView: 'workbench',
 
   setSource: (s) => {
     localStorage.setItem(LS_SOURCE, s)
@@ -148,4 +151,5 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelected: (s) => set({ selected: s }),
   setActiveAiTab: (t) => set({ activeAiTab: t }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  setActiveAppView: (v) => set({ activeAppView: v }),
 }))

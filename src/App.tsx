@@ -6,6 +6,7 @@ import { AiPanel } from './components/AiPanel'
 import { ControlBar } from './components/ControlBar'
 import { StatePanel } from './components/StatePanel'
 import { SettingsModal } from './components/SettingsModal'
+import { ToolsPanel } from './components/ToolsPanel'
 import { LuaRuntime } from './lua/luaRuntime'
 import { useAppStore } from './state/store'
 import './App.css'
@@ -20,6 +21,8 @@ export default function App() {
   const setRuntimeError = useAppStore((s) => s.setRuntimeError)
   const setSelected = useAppStore((s) => s.setSelected)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const activeAppView = useAppStore((s) => s.activeAppView)
+  const setActiveAppView = useAppStore((s) => s.setActiveAppView)
 
   const [runtime] = useState(() => new LuaRuntime())
 
@@ -110,35 +113,57 @@ export default function App() {
     <div className="app-grid">
       <header className="app-header">
         <h1>RisuAI Lua 테스트 워크벤치</h1>
+        <nav className="app-view-tabs">
+          <button
+            className={activeAppView === 'workbench' ? 'app-view-tab active' : 'app-view-tab'}
+            onClick={() => setActiveAppView('workbench')}
+          >
+            워크벤치
+          </button>
+          <button
+            className={activeAppView === 'tools' ? 'app-view-tab active' : 'app-view-tab'}
+            onClick={() => setActiveAppView('tools')}
+          >
+            정규식/포맷 도구
+          </button>
+        </nav>
         <button className="settings-open-btn" onClick={() => setSettingsOpen(true)}>
           ⚙ DeepSeek 설정
         </button>
       </header>
 
-      <section className="pane pane-editor">
-        <LuaEditor jumpToLine={jumpToLine} />
-      </section>
+      {activeAppView === 'workbench' ? (
+        <>
+          <section className="pane pane-editor">
+            <LuaEditor jumpToLine={jumpToLine} />
+          </section>
 
-      <section className="pane pane-preview">
-        <ControlBar
-          busy={busy}
-          onNewChat={handleNewChat}
-          onUserMessage={handleUserMessage}
-          onCharMessage={handleCharMessage}
-          onRefreshPanel={handleRefreshPanel}
-        />
-        <ScreenPreview html={panelHtml} onSelect={setSelected} />
-        <Inspector onJump={(line) => setJumpToLine(line)} />
-      </section>
+          <section className="pane pane-preview">
+            <ControlBar
+              busy={busy}
+              onNewChat={handleNewChat}
+              onUserMessage={handleUserMessage}
+              onCharMessage={handleCharMessage}
+              onRefreshPanel={handleRefreshPanel}
+            />
+            <ScreenPreview html={panelHtml} onSelect={setSelected} />
+            <Inspector onJump={(line) => setJumpToLine(line)} />
+          </section>
 
-      <section className="pane pane-state">
-        <div className="pane-state-top">
-          <StatePanel />
-        </div>
-        <div className="pane-state-bottom">
-          <AiPanel />
-        </div>
-      </section>
+          <section className="pane pane-state">
+            <div className="pane-state-top">
+              <StatePanel />
+            </div>
+            <div className="pane-state-bottom">
+              <AiPanel />
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="pane pane-tools-full">
+          <ToolsPanel />
+        </section>
+      )}
 
       <SettingsModal />
     </div>
