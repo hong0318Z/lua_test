@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import type { DiagnosticEntry } from '../lua/diagnostics'
+
+export type { DiagnosticEntry }
 
 const LS_SOURCE = 'lua_test.source'
 const LS_MARKER = 'lua_test.marker'
@@ -90,12 +93,6 @@ export interface SelectedElement {
   classes: string[]
   id: string | null
   textSample: string
-}
-
-export interface DiagnosticEntry {
-  stage: string
-  ok: boolean
-  error?: string
 }
 
 interface AppState {

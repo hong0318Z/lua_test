@@ -88,6 +88,30 @@ export function editRegionSystemPrompt(): string {
   return EDIT_REGION_SYSTEM_PROMPT
 }
 
+export interface EditHistoryEntry {
+  request: string
+  summary: string
+}
+
+// 이전 작업 내역을 플래너에게 참고용으로 전달하기 위한 압축된 텍스트.
+// 매번 전체 diff를 다시 보내지 않고, 요청 + 변경 요약만 누적해서 "기억"하게 한다.
+export function buildHistoryContext(history: EditHistoryEntry[]): string {
+  if (history.length === 0) return ''
+  const lines = history.map((h, i) => `${i + 1}. 요청: ${h.request}\n   적용된 변경 요약: ${h.summary}`)
+  return `이전 작업 내역 (이미 적용되어 현재 소스에 반영된 상태다, 참고만 할 것):\n${lines.join('\n')}\n\n`
+}
+
+const SUMMARY_SYSTEM_PROMPT = `너는 방금 적용된 Lua 코드 변경 사항을 한국어로 간결하게 정리하는 어시스턴트다.
+사용자 요청과, 영역별로 무엇이 어떻게 바뀌었는지(기존 코드 vs 수정된 코드)가 주어진다.
+규칙:
+1. 코드를 다시 출력하지 않는다. 변경 내용을 사람이 읽을 수 있는 설명으로만 정리한다.
+2. 각 영역이 "무엇을 왜" 바꿨는지 짧은 불릿 포인트로 정리한다.
+3. 전체 분량은 5줄 이내로 간결하게 유지한다.`
+
+export function summarySystemPrompt(): string {
+  return SUMMARY_SYSTEM_PROMPT
+}
+
 // 플래너 응답에서 JSON 배열을 추출한다 (```json 블록 우선, 없으면 첫 '[' ~ 마지막 ']').
 export function parseEditRegions(text: string): EditRegion[] {
   const blockMatch = text.match(/```json\s*([\s\S]*?)```/i) ?? text.match(/```\s*([\s\S]*?)```/)

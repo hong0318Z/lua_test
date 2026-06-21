@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useAppStore } from '../state/store'
+import { runFullDiagnostics, type DiagnosticEntry } from '../lua/diagnostics'
 import {
   applyRegionEdits,
+  buildHistoryContext,
   buildRegionContext,
   callDeepseek,
   editRegionSystemPrompt,
@@ -9,7 +11,9 @@ import {
   numberLines,
   parseEditRegions,
   planSystemPrompt,
+  summarySystemPrompt,
   type ChatMessage,
+  type EditHistoryEntry,
   type EditRegion,
 } from '../ai/deepseek'
 
@@ -24,19 +28,25 @@ type Phase =
   | { kind: 'planning' }
   | { kind: 'awaiting-approval'; regions: EditRegion[]; snapshot: string; request: string }
   | { kind: 'editing'; regions: EditRegion[]; snapshot: string; request: string; drafts: RegionDraft[] }
-  | { kind: 'review'; snapshot: string; drafts: RegionDraft[] }
+  | { kind: 'review'; snapshot: string; request: string; drafts: RegionDraft[] }
   | { kind: 'error'; message: string }
 
 export function RegionEditFlow() {
   const settings = useAppStore((s) => s.settings)
   const source = useAppStore((s) => s.source)
   const setSource = useAppStore((s) => s.setSource)
+  const marker = useAppStore((s) => s.marker)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
 
   const [input, setInput] = useState('')
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [lastAppliedSnapshot, setLastAppliedSnapshot] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [history, setHistory] = useState<EditHistoryEntry[]>([])
+  const [changeSummary, setChangeSummary] = useState<string | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [postCheck, setPostCheck] = useState<DiagnosticEntry[] | null>(null)
+  const [postCheckRunning, setPostCheckRunning] = useState(false)
 
   function requireApiKey(): boolean {
     if (!settings.apiKey) {
@@ -47,16 +57,18 @@ export function RegionEditFlow() {
     return true
   }
 
-  async function startPlanning() {
-    if (!input.trim() || !requireApiKey()) return
-    const request = input.trim()
+  async function startPlanning(explicitRequest?: string) {
+    const request = (explicitRequest ?? input).trim()
+    if (!request || !requireApiKey()) return
+    setInput('')
     setPhase({ kind: 'planning' })
     try {
+      const historyText = buildHistoryContext(history)
       const messages: ChatMessage[] = [
         { role: 'system', content: planSystemPrompt() },
         {
           role: 'user',
-          content: `요청: ${request}\n\n줄 번호가 매겨진 전체 소스:\n${numberLines(source)}`,
+          content: `${historyText}요청: ${request}\n\n줄 번호가 매겨진 전체 소스:\n${numberLines(source)}`,
         },
       ]
       const reply = await callDeepseek({
@@ -110,10 +122,10 @@ export function RegionEditFlow() {
     )
 
     setSelected(new Set(results.map((_, i) => i).filter((i) => results[i].newText !== null)))
-    setPhase({ kind: 'review', snapshot, drafts: results })
+    setPhase({ kind: 'review', snapshot, request, drafts: results })
   }
 
-  function applySelected(snapshot: string, drafts: RegionDraft[]) {
+  async function applySelected(snapshot: string, request: string, drafts: RegionDraft[]) {
     const edits = drafts
       .map((d, i) => ({ d, i }))
       .filter(({ d, i }) => d.newText !== null && selected.has(i))
@@ -123,13 +135,69 @@ export function RegionEditFlow() {
     setLastAppliedSnapshot(snapshot)
     setSource(next)
     setPhase({ kind: 'idle' })
-    setInput('')
+    setPostCheck(null)
+    setChangeSummary(null)
+
+    await Promise.all([summarizeChanges(snapshot, request, edits), recheckAfterApply(next)])
+  }
+
+  async function summarizeChanges(snapshot: string, request: string, edits: { region: EditRegion; newText: string }[]) {
+    setSummaryLoading(true)
+    try {
+      const oldLines = snapshot.split('\n')
+      const diffText = edits
+        .map(({ region, newText }) => {
+          const oldText = oldLines.slice(region.startLine - 1, region.endLine).join('\n')
+          return (
+            `영역 ${region.startLine}~${region.endLine} (${region.reason}):\n` +
+            `--- 기존 ---\n${oldText}\n--- 수정 ---\n${newText}`
+          )
+        })
+        .join('\n\n')
+      const messages: ChatMessage[] = [
+        { role: 'system', content: summarySystemPrompt() },
+        { role: 'user', content: `사용자 요청: ${request}\n\n적용된 변경 내역:\n${diffText}` },
+      ]
+      const summary = await callDeepseek({
+        apiKey: settings.apiKey,
+        model: settings.model,
+        maxOutputTokens: settings.maxOutputTokens,
+        messages,
+      })
+      setChangeSummary(summary)
+      setHistory((h) => [...h, { request, summary }])
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setChangeSummary(`(변경 요약 생성 실패: ${message})`)
+      setHistory((h) => [...h, { request, summary: '(요약 생성 실패)' }])
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
+  async function recheckAfterApply(next: string) {
+    setPostCheckRunning(true)
+    try {
+      setPostCheck(await runFullDiagnostics(next, marker))
+    } finally {
+      setPostCheckRunning(false)
+    }
+  }
+
+  function requestFixFromDiagnostics() {
+    if (!postCheck) return
+    const failing = postCheck.filter((d) => !d.ok)
+    if (failing.length === 0) return
+    const text = `다음 오류를 수정해줘:\n${failing.map((d) => `[${d.stage}] ${d.error}`).join('\n')}`
+    startPlanning(text)
   }
 
   function revert() {
     if (lastAppliedSnapshot === null) return
     setSource(lastAppliedSnapshot)
     setLastAppliedSnapshot(null)
+    setPostCheck(null)
+    setChangeSummary(null)
   }
 
   function toggleSelected(i: number) {
@@ -145,6 +213,8 @@ export function RegionEditFlow() {
     setPhase({ kind: 'idle' })
   }
 
+  const postCheckFailing = postCheck?.filter((d) => !d.ok) ?? []
+
   return (
     <div className="region-edit-flow">
       {lastAppliedSnapshot !== null && phase.kind === 'idle' && (
@@ -154,12 +224,45 @@ export function RegionEditFlow() {
         </div>
       )}
 
+      {(changeSummary || summaryLoading) && phase.kind === 'idle' && (
+        <div className="region-summary-box">
+          <div className="region-summary-header">변경 요약 (AI)</div>
+          {summaryLoading ? <div className="ai-loading">요약 생성 중...</div> : <div className="region-summary-text">{changeSummary}</div>}
+        </div>
+      )}
+
+      {(postCheck || postCheckRunning) && phase.kind === 'idle' && (
+        <div className="region-postcheck-box">
+          <div className="region-summary-header">적용 후 재점검</div>
+          {postCheckRunning ? (
+            <div className="ai-loading">재점검 중...</div>
+          ) : (
+            <>
+              {postCheck!.map((d, i) => (
+                <div key={i} className={d.ok ? 'diagnostics-item ok' : 'diagnostics-item fail'}>
+                  <span className="diagnostics-stage">
+                    {d.ok ? '✓' : '✗'} {d.stage}
+                  </span>
+                  {!d.ok && <pre>{d.error}</pre>}
+                </div>
+              ))}
+              {postCheckFailing.length > 0 && (
+                <button className="region-fix-btn" onClick={requestFixFromDiagnostics}>
+                  발견된 오류로 다시 수정 요청
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {(phase.kind === 'idle' || phase.kind === 'error') && (
         <>
           {phase.kind === 'error' && <div className="ai-error">{phase.message}</div>}
           <p className="ai-empty-hint">
             자연어로 요청하면 ① 수정이 필요한 영역만 먼저 식별하고 ② 승인하면 영역별로 호출해
-            수정한 뒤 ③ 검토 후 적용합니다. 전체 파일을 매번 다시 만들지 않아 더 빠릅니다.
+            수정한 뒤 ③ 검토 후 적용합니다. 적용 후에는 자동으로 재점검하고 변경 요약을
+            보여주며, 이전 작업 내역은 다음 요청에서 참고용으로 기억됩니다.
           </p>
         </>
       )}
@@ -217,7 +320,7 @@ export function RegionEditFlow() {
             </div>
           ))}
           <div className="region-actions">
-            <button onClick={() => applySelected(phase.snapshot, phase.drafts)} disabled={selected.size === 0}>
+            <button onClick={() => applySelected(phase.snapshot, phase.request, phase.drafts)} disabled={selected.size === 0}>
               선택한 영역 적용
             </button>
             <button className="region-actions-secondary" onClick={cancel}>
@@ -225,6 +328,20 @@ export function RegionEditFlow() {
             </button>
           </div>
         </div>
+      )}
+
+      {history.length > 0 && phase.kind === 'idle' && (
+        <details className="region-history">
+          <summary>이전 작업 내역 ({history.length}건, 다음 요청에 참고됨)</summary>
+          <ol>
+            {history.map((h, i) => (
+              <li key={i}>
+                <strong>{h.request}</strong>
+                <div>{h.summary}</div>
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
 
       <div className="ai-input-row">
@@ -237,7 +354,7 @@ export function RegionEditFlow() {
           placeholder='수정 요청 입력 (Ctrl+Enter로 전송), 예: "선물 카운터가 1씩 오르게 해줘"'
           disabled={phase.kind === 'planning' || phase.kind === 'editing'}
         />
-        <button onClick={startPlanning} disabled={phase.kind === 'planning' || phase.kind === 'editing'}>
+        <button onClick={() => startPlanning()} disabled={phase.kind === 'planning' || phase.kind === 'editing'}>
           전송
         </button>
       </div>

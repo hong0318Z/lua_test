@@ -8,6 +8,7 @@ import { StatePanel } from './components/StatePanel'
 import { SettingsModal } from './components/SettingsModal'
 import { ToolsPanel } from './components/ToolsPanel'
 import { LuaRuntime } from './lua/luaRuntime'
+import { runFullDiagnostics } from './lua/diagnostics'
 import { useAppStore } from './state/store'
 import './App.css'
 
@@ -119,29 +120,7 @@ export default function App() {
   async function handleFullCheck() {
     setDiagnosticsRunning(true)
     try {
-      const diag = new LuaRuntime()
-      const results: { stage: string; ok: boolean; error?: string }[] = []
-
-      const loadResult = await diag.loadScript(source)
-      results.push({ stage: '문법 (컴파일)', ok: loadResult.ok, error: loadResult.ok ? undefined : loadResult.error })
-      if (!loadResult.ok) {
-        setDiagnostics(results)
-        return
-      }
-
-      const startResult = await diag.onStart()
-      results.push({ stage: 'onStart', ok: startResult.ok, error: startResult.ok ? undefined : startResult.error })
-
-      const inputResult = await diag.onInput()
-      results.push({ stage: 'onInput', ok: inputResult.ok, error: inputResult.ok ? undefined : inputResult.error })
-
-      const outputResult = await diag.onOutput()
-      results.push({ stage: 'onOutput', ok: outputResult.ok, error: outputResult.ok ? undefined : outputResult.error })
-
-      const editResult = await diag.triggerEdit(marker)
-      results.push({ stage: '패널 (editDisplay)', ok: editResult.ok, error: editResult.ok ? undefined : editResult.error })
-
-      setDiagnostics(results)
+      setDiagnostics(await runFullDiagnostics(source, marker))
     } finally {
       setDiagnosticsRunning(false)
     }
