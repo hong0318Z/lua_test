@@ -440,6 +440,87 @@
   margin-bottom: 4px;
 }
 
+/* ===== Region edit flow ===== */
+.region-edit-flow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+.region-revert-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #2a2410;
+  border: 1px solid #5a4a1a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.region-revert-bar button {
+  background: #232530;
+  color: #e6e6e6;
+  border: 1px solid #343648;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.region-approval, .region-review {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.region-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #ccc;
+}
+.region-actions {
+  display: flex;
+  gap: 8px;
+}
+.region-actions button {
+  background: #2c5aa3;
+  color: #fff;
+  border: 1px solid #4da3ff;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+.region-actions button:disabled { opacity: 0.5; cursor: default; }
+.region-actions-secondary {
+  background: #232530 !important;
+  border-color: #343648 !important;
+}
+.region-draft {
+  background: #0e0f13;
+  border: 1px solid #2a2b33;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.region-draft-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ccc;
+  margin-bottom: 4px;
+}
+.region-draft-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 /* ===== Settings modal ===== */
 .modal-backdrop {
   position: fixed;

@@ -39,6 +39,105 @@ export function systemPromptFor(tab: 'edit' | 'explain'): string {
   return tab === 'edit' ? EDIT_SYSTEM_PROMPT : EXPLAIN_SYSTEM_PROMPT
 }
 
+// ===== 영역 지정 → 분할 수정 흐름 (전체 파일을 매번 통짜로 재생성하지 않기 위함) =====
+
+export interface EditRegion {
+  startLine: number
+  endLine: number
+  reason: string
+}
+
+const PLAN_SYSTEM_PROMPT = `너는 RisuAI 캐릭터 Lua 스크립트의 수정이 필요한 영역(줄 범위)만 짚어내는 분석가다.
+전체 파일을 다시 쓰지 않는다. 사용자의 요청을 처리하는 데 실제로 코드를 바꿔야 하는
+최소한의 줄 범위만 식별한다. 줄 번호는 입력으로 주어지는 "N: 코드" 형식의 N을 그대로 쓴다.
+
+규칙:
+1. 응답은 다른 설명 없이 JSON 배열 하나만 \`\`\`json 코드 블록으로 출력한다.
+2. 각 원소는 {"startLine": number, "endLine": number, "reason": string} 형태다.
+3. 서로 겹치지 않는, 가능한 한 적고 좁은 범위로 나눈다 (관련 없는 줄은 포함하지 않음).
+4. 요청을 처리하기 위해 새 코드를 "추가"해야 한다면 가장 적절한 삽입 위치 바로 다음 줄 하나를 startLine=endLine으로 지정하고 reason에 "추가"라고 명시한다.
+5. 수정이 필요한 영역이 전혀 없다고 판단되면 빈 배열 []을 반환한다.`
+
+const EDIT_REGION_SYSTEM_PROMPT = `너는 RisuAI 캐릭터 Lua 스크립트의 한 영역만 수정하는 엔지니어다.
+아래는 이 프로젝트의 개발 가이드다. 모든 수정은 이 가이드의 원칙을 위반하지 않아야 한다.
+
+--- 개발 가이드 시작 ---
+${RISU_LUA_DEV_GUIDE}
+--- 개발 가이드 끝 ---
+
+사용자가 전체 요청, 이 영역을 골라낸 이유, 그리고 줄 번호가 매겨진 주변 컨텍스트(대상 영역 포함)를
+줄 것이다. 규칙:
+1. 응답은 반드시 "대상 영역(startLine~endLine)을 대체할 코드"만 \`\`\`lua 코드 블록 하나로 제공한다. 줄 번호 표시는 포함하지 않는다.
+2. 컨텍스트로 받은 줄 중 startLine~endLine 범위 밖의 줄은 그대로 참고만 하고 절대 다시 출력하지 않는다.
+3. 들여쓰기와 문맥(들어가는 블록의 깊이, 주변 함수)을 보고 자연스럽게 이어지도록 작성한다.
+4. 가이드의 함정(한글 키, 마커 정확매칭+캐시버스팅, 멱등성 등)을 따른다.
+5. 문법적으로 유효한 Lua 코드 조각이어야 한다.`
+
+export function numberLines(source: string): string {
+  return source
+    .split('\n')
+    .map((line, i) => `${i + 1}: ${line}`)
+    .join('\n')
+}
+
+export function planSystemPrompt(): string {
+  return PLAN_SYSTEM_PROMPT
+}
+
+export function editRegionSystemPrompt(): string {
+  return EDIT_REGION_SYSTEM_PROMPT
+}
+
+// 플래너 응답에서 JSON 배열을 추출한다 (```json 블록 우선, 없으면 첫 '[' ~ 마지막 ']').
+export function parseEditRegions(text: string): EditRegion[] {
+  const blockMatch = text.match(/```json\s*([\s\S]*?)```/i) ?? text.match(/```\s*([\s\S]*?)```/)
+  const jsonText = blockMatch ? blockMatch[1] : text
+  const start = jsonText.indexOf('[')
+  const end = jsonText.lastIndexOf(']')
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('영역 식별 응답에서 JSON 배열을 찾지 못했습니다.')
+  }
+  const parsed = JSON.parse(jsonText.slice(start, end + 1))
+  if (!Array.isArray(parsed)) throw new Error('영역 식별 응답이 배열 형식이 아닙니다.')
+  return parsed.map((r) => ({
+    startLine: Number(r.startLine),
+    endLine: Number(r.endLine),
+    reason: String(r.reason ?? ''),
+  }))
+}
+
+// 영역 수정 응답에서 코드 블록(대상 영역 대체 코드)을 추출한다.
+export function extractRegionReplacement(text: string): string {
+  const code = extractLuaCodeBlock(text)
+  if (code === null) throw new Error('영역 수정 응답에서 코드 블록을 찾지 못했습니다.')
+  return code
+}
+
+const CONTEXT_PADDING_LINES = 8
+
+export function buildRegionContext(source: string, region: EditRegion): { contextText: string; contextStart: number; contextEnd: number } {
+  const lines = source.split('\n')
+  const contextStart = Math.max(1, region.startLine - CONTEXT_PADDING_LINES)
+  const contextEnd = Math.min(lines.length, region.endLine + CONTEXT_PADDING_LINES)
+  const contextText = lines
+    .slice(contextStart - 1, contextEnd)
+    .map((line, i) => `${contextStart + i}: ${line}`)
+    .join('\n')
+  return { contextText, contextStart, contextEnd }
+}
+
+// 줄 번호 기준으로 영역들을 대체 텍스트로 치환한다. 뒤쪽(아래) 영역부터 적용해야
+// 앞쪽 영역의 줄 번호가 그대로 유지된다.
+export function applyRegionEdits(source: string, edits: { region: EditRegion; newText: string }[]): string {
+  const lines = source.split('\n')
+  const sorted = [...edits].sort((a, b) => b.region.startLine - a.region.startLine)
+  for (const { region, newText } of sorted) {
+    const replacement = newText.split('\n')
+    lines.splice(region.startLine - 1, region.endLine - region.startLine + 1, ...replacement)
+  }
+  return lines.join('\n')
+}
+
 export interface DeepseekCallOptions {
   apiKey: string
   model: DeepseekModel
